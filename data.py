@@ -223,6 +223,7 @@ class MolGraphSet(Dataset):
         self.mols = []
         self.labels = []
         self.graphs = []
+        self.pharm_smiles = []
         for i,row in df.iterrows():
             smi = row['smiles']
             label = row[target].values.astype(float)
@@ -278,8 +279,78 @@ def random_split(load_path,save_dir,num_fold=5,sizes = [0.7,0.1,0.2],seed=0):
         val.to_csv(os.path.join(save_dir)+f'{seed}_fold_{fold}_valid.csv',index=False)
         test.to_csv(os.path.join(save_dir)+f'{seed}_fold_{fold}_test.csv',index=False)
 
+from deepchem.data import Dataset, DiskDataset
+def convert_diskdataset_to_dataframe(dataset:DiskDataset):
+    ids = dataset.ids
+    X = dataset.X
+    y = dataset.y
+    w = dataset.w
+
+    df_X = pd.DataFrame(X, columns=[f'X_{i}' for i in range(X.shape[1])])
+    df_y = pd.DataFrame(y, columns=dataset.tasks)
+    df_w = pd.DataFrame(w, columns=[f'weight_{i}' for i in range(w.shape[1])])
+    df_ids = pd.DataFrame(ids, columns=['smiles'])
+
+    df = pd.concat([df_ids, df_X, df_y, df_w], axis=1)
+    return df
+
+def my_scaffold_split(dataset,save_dir,num_fold=5,seed=2022):
+    n = len(dataset)
+    os.makedirs(save_dir,exist_ok=True)
+    import deepchem as dc
+    scaffoldsplitter = dc.splits.ScaffoldSplitter()
+    split_result = scaffoldsplitter.k_fold_split(dataset, num_fold,seed=seed)
+    for fold, [train_dataset, valid_test_datast] in enumerate(split_result):
+        lenvt = len(valid_test_datast)
+        [_, valid_ids, test_ids] = scaffoldsplitter.split(valid_test_datast,0,0.5,0.5,seed=seed)
+        valid_dataset = valid_test_datast.select(valid_ids)
+        test_dataset = valid_test_datast.select(test_ids)
+        train_df = convert_diskdataset_to_dataframe(train_dataset)
+        valid_df = convert_diskdataset_to_dataframe(valid_dataset)
+        test_df = convert_diskdataset_to_dataframe(test_dataset)
+        train_df.to_csv(os.path.join(save_dir)+f'{seed}_fold_{fold}_train.csv',index=False)
+        valid_df.to_csv(os.path.join(save_dir)+f'{seed}_fold_{fold}_valid.csv',index=False)
+        test_df.to_csv(os.path.join(save_dir)+f'{seed}_fold_{fold}_test.csv',index=False)
+
+
+
+
+def load_bbbp():
+    from deepchem.molnet.load_function.bbbp_datasets import _BBBPLoader
+
+    BBBP_URL = "https://deepchemdata.s3-us-west-1.amazonaws.com/datasets/BBBP.csv"
+    BBBP_TASKS = ["p_np"]
+
+    save_dir = 'data_index/bbbp/'
+    loader =  _BBBPLoader('ECFP', 'scaffold', ['balancing'], BBBP_TASKS,
+                         'data_index', save_dir)
+    my_scaffold_split(loader.create_dataset(),save_dir)
+    
+def load_bace():
+    from deepchem.molnet.load_function.bace_datasets import _BaceLoader
+    
+    BACE_URL = "https://deepchemdata.s3-us-west-1.amazonaws.com/datasets/bace.csv"
+    BACE_REGRESSION_TASKS = ["pIC50"]
+    BACE_CLASSIFICATION_TASKS = ["Class"]
+
+    save_dir = 'data_index/bace/'
+    loader = _BaceLoader('ECFP', 'scaffold', ['balancing'], BACE_CLASSIFICATION_TASKS,
+                         'data_index', 'data_index/bace')
+    
+    my_scaffold_split(loader.create_dataset(),save_dir)
+
+def load_clintox():
+    from deepchem.molnet.load_function.clintox_datasets import _ClintoxLoader
+    
+    CLINTOX_URL = "https://deepchemdata.s3-us-west-1.amazonaws.com/datasets/clintox.csv.gz"
+    CLINTOX_TASKS = ['FDA_APPROVED', 'CT_TOX']
+
+    save_dir = 'data_index/clintox/'
+    loader = _ClintoxLoader('ECFP', 'scaffold', ['balancing'], CLINTOX_TASKS,
+                         'data_index', 'data_index/clintox')
+    
+    my_scaffold_split(loader.create_dataset(),save_dir)
 
 
 if __name__=='__main__':
-    for seed in [2022]:
-        random_split('data_index/esol.csv','data_index/esol/',seed=seed)
+    load_clintox()
