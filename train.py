@@ -158,3 +158,7 @@ if __name__=='__main__':
     print(config)
     results = train(data_args,train_args,model_args,seed)
     print(f'average performance: {np.mean(results)}+/-{np.std(results)}')
+
+    result_dict = {config_path:f'average performance: {np.mean(results)}'}
+    with open('result.jsonl', 'a') as file:
+        file.write(json.dumps(result_dict) + '\n')
